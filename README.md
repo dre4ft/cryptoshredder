@@ -1,40 +1,74 @@
-# CryptoShredder
+# 🔐 CryptoShredder
 
-**CryptoShredder** is a simple command-line tool written in C for securely shredding files and directories using XOR encryption with a randomly generated key. It can also optionally delete files and folders after shredding.
+A simple C utility to **securely encrypt and destroy files or directories**, making data irrecoverable without the encryption key. This tool is designed to work effectively even on SSDs, where traditional overwriting methods are unreliable due to wear leveling and internal caching.
 
-## Features
+---
 
-* Overwrites file contents using random XOR-based obfuscation.
-* Recursively processes directories.
-* Optionally deletes shredded files and folders.
-* Uses `mmap` for efficient file manipulation.
-* Leverages `/dev/urandom` for secure key generation.
+## 🚀 Features
 
-## Compilation
+* 🔒 **Encrypts files using AES-256-CBC**
+* 💥 **Destroys the encryption key immediately after use**
+* 🧠 **No key stored on disk** — once encryption is complete, data cannot be recovered
+* 🗂️ Works recursively on directories
+* 🗑️ Optional deletion of the original file or directory after encryption
+* ✅ SSD-friendly: does not rely on physical overwriting
 
-Compile with `gcc`:
+---
+
+## 📦 Requirements
+
+You must have OpenSSL development libraries installed:
 
 ```bash
-gcc -o cryptoshredder cryptoshredder.c
+sudo apt install libssl-dev
 ```
 
-## Usage
+---
+
+## 🛠️ Compilation
+
+Compile with:
 
 ```bash
-./cryptoshredder -f <file>        # Shred a single file
-./cryptoshredder -d <directory>   # Shred all files in a directory
-./cryptoshredder -frm <file>      # Shred and delete a single file
-./cryptoshredder -drm <directory> # Shred and delete all files in a directory
+gcc -o cryptoshredder cryptoshredder.c -lcrypto
 ```
 
-## Notes
+---
 
-* Only regular files are processed; symlinks and special files are ignored.
-* Files are overwritten with pseudo-random XOR data but not multiple passes or pattern-specific erasure.
-* Make sure you have write permissions on the target files/directories.
-* This tool is **not guaranteed to meet government or military data destruction standards**.
+## 🧪 Usage
 
-## Disclaimer
+```bash
+./cryptoshredder -f <file>         # Encrypt a single file
+./cryptoshredder -d <directory>    # Encrypt all files in a directory recursively
 
-Use at your own risk. Once shredded and deleted, data recovery is practically impossible.
+# Optional: delete files/directories after encryption
+./cryptoshredder -frm <file>       # Encrypt and delete file
+./cryptoshredder -drm <directory>  # Encrypt and delete directory
+```
+
+---
+
+## 🔐 How it Works
+
+* The tool reads the file into memory.
+* It generates a random **AES-256 key and IV** using `/dev/urandom`.
+* It encrypts the contents in-place using **OpenSSL's AES-256-CBC**.
+* It **overwrites the original file** with the encrypted version.
+* The encryption key and IV are securely wiped from memory using a `secure_zero()` function.
+* Optionally, it deletes the original file or folder using `remove()` or `rmdir()`.
+
+⚠️ Once the key is destroyed, **decryption is impossible**.
+
+---
+
+## ⚠️ Warning
+
+This tool performs **irreversible encryption**. There is no backup of the encryption key. Use it only when you are sure the data must be rendered permanently inaccessible.
+
+---
+
+## ✅ Why Use Encryption Instead of Overwriting?
+
+Traditional shredding tools overwrite files to make recovery impossible. However, on **SSDs**, overwriting isn't guaranteed due to wear-leveling and internal remapping. This tool avoids that problem by **cryptographically destroying access** to the data — rendering it useless even if it's physically intact.
+
 
