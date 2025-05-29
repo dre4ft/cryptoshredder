@@ -7,93 +7,99 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <fcntl.h>
-#include <sys/mman.h>
 #include <errno.h>
 #include <limits.h>
 
-#define KEY_SIZE 4096
+#include <openssl/evp.h>
+#include <openssl/rand.h>
+
+#define KEY_SIZE 32  // AES-256
+#define IV_SIZE 16   // AES block size
+
+int remove_after = 0;
 
 void secure_zero(void *v, size_t n) {
     volatile unsigned char *p = v;
     while (n--) *p++ = 0;
 }
 
-int remove_after = 0; // Global
-
 void shred_file(const char *filepath) {
-    int fd = open(filepath, O_RDWR);
-    if (fd < 0) {
-        perror("open");
+    FILE *in = fopen(filepath, "rb+");
+    if (!in) {
+        perror("fopen");
         return;
     }
 
-    struct stat st;
-    if (fstat(fd, &st) < 0) {
-        perror("fstat");
-        close(fd);
+    fseek(in, 0, SEEK_END);
+    long filesize = ftell(in);
+    if (filesize <= 0) {
+        fclose(in);
         return;
     }
+    fseek(in, 0, SEEK_SET);
 
-    if (!S_ISREG(st.st_mode) || st.st_size == 0) {
-        close(fd);
-        return;
-    }
-
-    void *map = mmap(NULL, st.st_size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
-    if (map == MAP_FAILED) {
-        perror("mmap");
-        close(fd);
-        return;
-    }
-
-    unsigned char *key = malloc(KEY_SIZE);
-    if (!key) {
+    unsigned char *plaintext = malloc(filesize);
+    if (!plaintext) {
         perror("malloc");
-        munmap(map, st.st_size);
-        close(fd);
+        fclose(in);
         return;
     }
 
-    int randfd = open("/dev/urandom", O_RDONLY);
-    if (randfd < 0) {
-        perror("open /dev/urandom");
-        free(key);
-        munmap(map, st.st_size);
-        close(fd);
+    if (fread(plaintext, 1, filesize, in) != filesize) {
+        perror("fread");
+        free(plaintext);
+        fclose(in);
         return;
     }
 
-    if (read(randfd, key, KEY_SIZE) != KEY_SIZE) {
-        perror("read /dev/urandom");
-        close(randfd);
-        free(key);
-        munmap(map, st.st_size);
-        close(fd);
+    unsigned char key[KEY_SIZE];
+    unsigned char iv[IV_SIZE];
+
+    if (!RAND_bytes(key, sizeof(key)) || !RAND_bytes(iv, sizeof(iv))) {
+        fprintf(stderr, "RAND_bytes failed\n");
+        free(plaintext);
+        fclose(in);
         return;
     }
-    close(randfd);
 
-    unsigned char *data = (unsigned char *)map;
-    for (off_t i = 0; i < st.st_size; i++) {
-        data[i] ^= key[i % KEY_SIZE];
+    EVP_CIPHER_CTX *ctx = EVP_CIPHER_CTX_new();
+    if (!ctx) {
+        perror("EVP_CIPHER_CTX_new");
+        free(plaintext);
+        fclose(in);
+        return;
     }
 
-    if (msync(map, st.st_size, MS_SYNC) < 0) {
-        perror("msync");
-    }
+    unsigned char *ciphertext = malloc(filesize + EVP_MAX_BLOCK_LENGTH);
+    int len, ciphertext_len = 0;
 
-    secure_zero(key, KEY_SIZE);
-    free(key);
-    munmap(map, st.st_size);
-    close(fd);
+    EVP_EncryptInit_ex(ctx, EVP_aes_256_cbc(), NULL, key, iv);
+    EVP_EncryptUpdate(ctx, ciphertext, &len, plaintext, filesize);
+    ciphertext_len += len;
+    EVP_EncryptFinal_ex(ctx, ciphertext + len, &len);
+    ciphertext_len += len;
 
-    printf("[OK] Shredded: %s\n", filepath);
+    rewind(in);
+    fwrite(ciphertext, 1, ciphertext_len, in);
+    fflush(in);
+    ftruncate(fileno(in), ciphertext_len);
+    fclose(in);
+
+    secure_zero(key, sizeof(key));
+    secure_zero(iv, sizeof(iv));
+    secure_zero(plaintext, filesize);
+
+    free(plaintext);
+    free(ciphertext);
+    EVP_CIPHER_CTX_free(ctx);
+
+    printf("[OK] Encrypted: %s\n", filepath);
 
     if (remove_after) {
         if (remove(filepath) == 0) {
             printf("[DEL] Deleted: %s\n", filepath);
         } else {
-            perror("[ERR] File deletion failed");
+            perror("[ERR] Failed to delete");
         }
     }
 }
@@ -133,7 +139,7 @@ void shred_directory(const char *dirpath) {
         if (rmdir(dirpath) == 0) {
             printf("[DEL] Directory deleted: %s\n", dirpath);
         } else {
-            perror("[ERR] Directory deletion failed");
+            perror("[ERR] Failed to remove directory");
         }
     }
 }
