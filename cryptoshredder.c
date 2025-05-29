@@ -13,7 +13,6 @@
 
 #define KEY_SIZE 4096
 
-
 void secure_zero(void *v, size_t n) {
     volatile unsigned char *p = v;
     while (n--) *p++ = 0;
@@ -92,9 +91,9 @@ void shred_file(const char *filepath) {
 
     if (remove_after) {
         if (remove(filepath) == 0) {
-            printf("[DEL] Supprimé: %s\n", filepath);
+            printf("[DEL] Deleted: %s\n", filepath);
         } else {
-            perror("[ERR] Suppression échouée");
+            perror("[ERR] File deletion failed");
         }
     }
 }
@@ -132,9 +131,9 @@ void shred_directory(const char *dirpath) {
 
     if (remove_after) {
         if (rmdir(dirpath) == 0) {
-            printf("[DEL] Dossier supprimé: %s\n", dirpath);
+            printf("[DEL] Directory deleted: %s\n", dirpath);
         } else {
-            perror("[ERR] Suppression dossier échouée");
+            perror("[ERR] Directory deletion failed");
         }
     }
 }
@@ -143,19 +142,17 @@ int main(int argc, char *argv[]) {
     char *file = NULL;
     char *dir = NULL;
 
-    // Arguments personnalisés
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "-f") == 0 && i + 1 < argc) {
             file = argv[++i];
         } else if (strcmp(argv[i], "-d") == 0 && i + 1 < argc) {
             dir = argv[++i];
         } else if (strcmp(argv[i], "-frm") == 0 && i + 1 < argc) {
-	    file = argv[++i];
-	    remove_after = 1; 
-	} 
-	else if (strcmp(argv[i], "-drm") == 0 && i + 1 < argc) {
+            file = argv[++i];
+            remove_after = 1;
+        } else if (strcmp(argv[i], "-drm") == 0 && i + 1 < argc) {
             dir = argv[++i];
-	    remove_after = 1;
+            remove_after = 1;
         } else {
             fprintf(stderr, "Usage: %s -f <file> | -d <directory> [-frm|-drm]\n", argv[0]);
             exit(EXIT_FAILURE);
@@ -167,10 +164,9 @@ int main(int argc, char *argv[]) {
     } else if (dir) {
         shred_directory(dir);
     } else {
-        fprintf(stderr, "Erreur: spécifiez -f <fichier> ou -d <dossier>\n");
+        fprintf(stderr, "Error: specify -f <file> or -d <directory>\n");
         exit(EXIT_FAILURE);
     }
 
     return 0;
 }
-
